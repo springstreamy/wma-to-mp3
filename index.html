@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WMA to MP3</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#2f7d55">
+<style>
+  :root {
+    --bg: #faf7f2;
+    --panel: #ffffff;
+    --ink: #2b2620;
+    --muted: #7a7166;
+    --line: #e6dfd4;
+    --in: #c4572e;
+    --in-soft: #fbe9e1;
+    --out: #2f7d55;
+    --out-soft: #e3f3ea;
+    --bad: #b3261e;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1916;
+      --panel: #26221e;
+      --ink: #f1ebe2;
+      --muted: #a89e91;
+      --line: #3a342d;
+      --in: #e7845a;
+      --in-soft: #3a2a22;
+      --out: #5cc28c;
+      --out-soft: #1f3329;
+      --bad: #f2867e;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 24px clamp(16px, 3vw, 48px);
+  }
+  button { font: inherit; color: inherit; }
+  /* Fill the window: header and status take what they need, the panels get the rest. */
+  main {
+    height: calc(100vh - 48px);
+    min-height: 460px;
+    display: flex;
+    flex-direction: column;
+  }
+  h1 { margin: 0; font-size: 2rem; letter-spacing: -0.02em; }
+  h1 .wma { color: var(--in); }
+  h1 .mp3 { color: var(--out); }
+  header { display: flex; align-items: flex-start; gap: 16px; }
+  header > div { flex: 1; }
+  header p { margin: 4px 0 20px; color: var(--muted); }
+
+  /* --- Two panels with an arrow between ------------------------------- */
+  .panels {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr auto 1.3fr;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: var(--panel);
+    border: 3px solid;
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .panel.in { border-color: var(--in); border-style: dashed; }
+  .panel.out { border-color: var(--out); }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+  .in .panel-head { background: var(--in-soft); color: var(--in); }
+  .out .panel-head { background: var(--out-soft); color: var(--out); }
+  .step {
+    width: 30px; height: 30px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 1rem;
+  }
+  .in .step { background: var(--in); }
+  .out .step { background: var(--out); }
+  .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .arrow {
+    align-self: center;
+    width: 56px; height: 56px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(90deg, var(--in), var(--out));
+    color: #fff;
+  }
+  .arrow svg { width: 28px; height: 28px; }
+
+  .drop {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 24px;
+    text-align: center;
+    transition: background .15s;
+  }
+  .drop.over { background: var(--in-soft); }
+  .drop > svg { width: 64px; height: 64px; color: var(--in); margin-bottom: 8px; }
+  .drop strong { font-size: 1.25rem; }
+  .drop .or { color: var(--muted); margin: 4px 0; }
+
+  .results { flex: 1; min-height: 0; overflow: auto; padding: 8px 12px; }
+  .empty {
+    height: 100%;
+    min-height: 160px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    text-align: center;
+    padding: 24px;
+  }
+
+  /* --- Buttons -------------------------------------------------------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    border: 0;
+    font-size: .9rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.in { background: var(--in); color: #fff; font-size: 1rem; padding: 10px 22px; }
+  .btn.out { background: var(--out); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--out); box-shadow: inset 0 0 0 2px var(--out); }
+  .btn.ghost[aria-pressed="true"] { background: var(--out-soft); }
+  .btn.ghost[aria-pressed="true"]::before { content: "✓"; }
+
+  /* --- Track rows ----------------------------------------------------- */
+  ul { list-style: none; margin: 0; padding: 0; }
+  .item {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 10px 4px;
+    background: var(--panel);
+    border-radius: 12px;
+  }
+  .item + .item { border-top: 1px solid var(--line); }
+  .item.dragging { box-shadow: 0 6px 20px rgb(0 0 0 / .18); border-color: transparent; position: relative; z-index: 1; }
+  .item.dragging + .item { border-top-color: transparent; }
+
+  .handle {
+    flex: none;
+    width: 24px; height: 40px;
+    display: grid; place-items: center;
+    border: 0; background: none;
+    color: var(--muted);
+    cursor: grab;
+    touch-action: none;
+    border-radius: 6px;
+  }
+  .handle:active { cursor: grabbing; }
+  .handle svg { width: 14px; height: 20px; }
+
+  .knob { width: 40px; height: 40px; flex: none; }
+  .ring { width: 40px; height: 40px; }
+  .ring circle { fill: none; stroke-width: 3.5; }
+  .ring .track { stroke: var(--line); }
+  .ring .bar {
+    stroke: var(--in);
+    stroke-linecap: round;
+    stroke-dasharray: 100.53;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset .2s;
+  }
+  .ring.spin { animation: spin 1s linear infinite; }
+  .ring.spin .bar { stroke-dashoffset: 75; transition: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ring.bad .bar { stroke: var(--bad); stroke-dashoffset: 0; }
+  /* The knob shows the progress ring while converting, the play button once done. */
+  .item.ready .ring, .item:not(.ready) .play { display: none; }
+  .play {
+    width: 40px; height: 40px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    border: 0;
+    background: var(--out);
+    color: #fff;
+    cursor: pointer;
+  }
+  .play svg { width: 18px; height: 18px; fill: currentColor; }
+
+  .main { flex: 1 1 180px; min-width: 0; }
+  .title { display: flex; align-items: center; gap: 6px; }
+  .num {
+    flex: none;
+    padding: 0 7px;
+    border-radius: 6px;
+    background: var(--out-soft);
+    color: var(--out);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .name {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 600;
+  }
+  .name:hover { border-color: var(--muted); }
+  .name:focus { outline: none; border-color: var(--out); background: var(--bg); }
+  .ext { color: var(--muted); }
+  .sub { font-size: .875rem; color: var(--muted); }
+  .item.failed .sub { color: var(--bad); }
+  .player { display: flex; align-items: center; gap: 8px; font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .seek { flex: 1; min-width: 60px; accent-color: var(--out); margin: 4px 0 0; }
+
+  .actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .remove {
+    width: 32px; height: 32px;
+    border: 0; background: none;
+    border-radius: 50%;
+    color: var(--muted);
+    font-size: 1.4rem; line-height: 1;
+    cursor: pointer;
+  }
+  .remove:hover { background: var(--line); color: var(--ink); }
+
+  .status { margin: 14px 0 0; color: var(--muted); font-size: .9rem; text-align: center; }
+  .status.bad { color: var(--bad); }
+
+  /* Narrow screens: stack the panels and let the page scroll normally. */
+  @media (max-width: 760px) {
+    main { height: auto; }
+    .panels { grid-template-columns: 1fr; grid-template-rows: auto; }
+    .arrow { transform: rotate(90deg); justify-self: center; }
+    .drop { min-height: 220px; }
+    .results { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1><span class="wma">WMA</span> → <span class="mp3">MP3</span></h1>
+      <p>Put WMA files in on the left. MP3s come out on the right, ready to rename, listen to and download.</p>
+    </div>
+    <button class="btn ghost" id="install" type="button" hidden>Install as app</button>
+  </header>
+
+  <div class="panels">
+    <section class="panel in">
+      <div class="panel-head"><span class="step">1</span> WMA files go in here</div>
+      <div class="drop" id="drop">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+        </svg>
+        <strong>Drag WMA files here</strong>
+        <span class="or">or</span>
+        <button class="btn in" id="choose" type="button">Choose files…</button>
+        <input type="file" id="picker" accept=".wma,audio/*" multiple hidden>
+      </div>
+    </section>
+
+    <div class="arrow" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </div>
+
+    <section class="panel out">
+      <div class="panel-head">
+        <span class="step">2</span> MP3 files come out here
+        <div class="tools">
+          <button class="btn ghost" id="numbering" type="button" aria-pressed="false" title="Add 01, 02, 03… in front of each name, following the list order">Number tracks</button>
+          <button class="btn out" id="downloadAll" type="button" disabled>Download all</button>
+        </div>
+      </div>
+      <div class="results" id="results" aria-live="polite">
+        <p class="empty" id="empty">Your MP3s will show up here</p>
+        <ul id="list"></ul>
+      </div>
+    </section>
+  </div>
+
+  <p class="status" id="status">Getting the converter ready… (the first visit takes a moment)</p>
+</main>
+
+<!-- Runs in a Web Worker so the page stays responsive while ffmpeg works. -->
+<script type="text/js-worker" id="worker-src">
+  let core, current = null, log = [];
+
+  self.onmessage = async ({ data }) => {
+    const { id, type } = data;
+    try {
+      if (type === 'load') {
+        importScripts(data.core + 'ffmpeg-core.js');
+        const hash = btoa(JSON.stringify({ wasmURL: data.core + 'ffmpeg-core.wasm' }));
+        core = await createFFmpegCore({ mainScriptUrlOrBlob: data.core + 'ffmpeg-core.js#' + hash });
+        core.setLogger(({ message }) => log.push(message));
+        core.setProgress(({ progress }) => {
+          if (current !== null) self.postMessage({ id: current, type: 'progress', progress });
+        });
+        self.postMessage({ id, type: 'done' });
+      } else if (type === 'exec') {
+        current = id;
+        log = [];
+        core.FS.writeFile(data.inName, data.input);
+        core.exec(...data.args);
+        const ret = core.ret;
+        core.reset();
+        let output = null;
+        try { if (ret === 0) output = core.FS.readFile(data.outName); } catch {}
+        for (const f of [data.inName, data.outName]) try { core.FS.unlink(f); } catch {}
+        current = null;
+        if (!output) throw new Error(log.slice(-8).join('\n') || 'ffmpeg failed');
+        self.postMessage({ id, type: 'done', output }, [output.buffer]);
+      }
+    } catch (e) {
+      current = null;
+      self.postMessage({ id, type: 'error', message: String((e && e.message) || e) });
+    }
+  };
+</script>
+
+<script>
+  const CORE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/';
+  const BITRATE = '192k';
+
+  const ICON = {
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+    grip: '<svg viewBox="0 0 10 16" fill="currentColor"><circle cx="2" cy="2" r="1.6"/><circle cx="8" cy="2" r="1.6"/><circle cx="2" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="2" cy="14" r="1.6"/><circle cx="8" cy="14" r="1.6"/></svg>',
+  };
+
+  const $ = id => document.getElementById(id);
+  const drop = $('drop'), picker = $('picker'), list = $('list'), empty = $('empty');
+  const results = $('results'), status = $('status'), numberingBtn = $('numbering'), downloadAllBtn = $('downloadAll');
+
+  // --- Worker plumbing ---------------------------------------------------
+  const worker = new Worker(URL.createObjectURL(
+    new Blob([$('worker-src').textContent], { type: 'text/javascript' })
+  ));
+  const pending = new Map();
+  let nextId = 0;
+
+  worker.onmessage = ({ data }) => {
+    const p = pending.get(data.id);
+    if (!p) return;
+    if (data.type === 'progress') return p.onProgress && p.onProgress(data.progress);
+    pending.delete(data.id);
+    data.type === 'error' ? p.reject(new Error(data.message)) : p.resolve(data.output);
+  };
+
+  function call(msg, onProgress, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const id = ++nextId;
+      pending.set(id, { resolve, reject, onProgress });
+      worker.postMessage({ ...msg, id }, transfer);
+    });
+  }
+
+  const ready = call({ type: 'load', core: CORE });
+  ready.then(
+    () => { status.textContent = 'Ready. Everything happens on this computer; nothing is uploaded.'; },
+    err => {
+      console.error(err);
+      status.textContent = 'Couldn’t load the converter. Check the internet connection and reload the page.';
+      status.classList.add('bad');
+    }
+  );
+
+  async function exec(args, inName, outName, input, onProgress) {
+    await ready;
+    return call({ type: 'exec', args, inName, outName, input }, onProgress, [input.buffer]);
+  }
+
+  // --- Helpers -----------------------------------------------------------
+  const baseName = name => name.replace(/\.[^.]+$/, '');
+  const safeFileName = s => s.replace(/[\\/:*?"<>|\x00-\x1f]/g, '').trim();
+  const fmtTime = s => isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '0:00';
+
+  function save(blob, fileName) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+
+  // --- Track list --------------------------------------------------------
+  const items = new Map();   // <li> -> item
+  let numbering = false;
+
+  const rows = () => [...list.children].map(li => items.get(li));
+
+  function refresh() {
+    const live = rows().filter(it => !it.failed);
+    const width = Math.max(2, String(live.length).length);
+    live.forEach((it, i) => {
+      it.n = i + 1;
+      it.num.textContent = String(it.n).padStart(width, '0');
+    });
+    for (const it of rows()) it.num.hidden = !numbering || it.failed;
+    empty.hidden = list.children.length > 0;
+    if (!downloadAllBusy) downloadAllBtn.disabled = !rows().some(it => it.mp3);
+  }
+
+  function addItem(file) {
+    const li = document.createElement('li');
+    li.className = 'item';
+    li.innerHTML = `
+      <button class="handle" type="button" title="Drag to reorder" aria-label="Move (drag, or use arrow keys)">${ICON.grip}</button>
+      <div class="knob">
+        <svg class="ring spin" viewBox="0 0 36 36" aria-hidden="true">
+          <circle class="track" cx="18" cy="18" r="16"/><circle class="bar" cx="18" cy="18" r="16"/>
+        </svg>
+        <button class="play" type="button" aria-label="Play">${ICON.play}</button>
+      </div>
+      <div class="main">
+        <div class="title">
+          <span class="num" hidden></span>
+          <input class="name" spellcheck="false" aria-label="MP3 name" title="Click to rename">
+          <span class="ext">.mp3</span>
+        </div>
+        <div class="sub">Waiting…</div>
+        <div class="player" hidden>
+          <input class="seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+          <span class="time">0:00</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn out dl" type="button" hidden>Download</button>
+        <button class="remove" type="button" title="Remove from list" aria-label="Remove">×</button>
+      </div>`;
+    const q = s => li.querySelector(s);
+    const it = {
+      li, base: baseName(file.name),
+      ring: q('.ring'), bar: q('.bar'), playBtn: q('.play'), num: q('.num'), name: q('.name'),
+      sub: q('.sub'), player: q('.player'), seek: q('.seek'), time: q('.time'), dl: q('.dl'),
+    };
+    it.name.value = it.base;
+    it.name.addEventListener('keydown', e => { if (e.key === 'Enter') it.name.blur(); });
+    it.name.addEventListener('blur', () => { if (!it.name.value.trim()) it.name.value = it.base; });
+    it.playBtn.onclick = () => togglePlay(it);
+    it.seek.addEventListener('input', () => seekTo(it, it.seek.value / 1000));
+    it.dl.onclick = () => downloadOne(it);
+    q('.remove').onclick = () => removeItem(it);
+    setupReorder(q('.handle'), li);
+
+    items.set(li, it);
+    list.append(li);
+    refresh();
+    li.scrollIntoView({ block: 'nearest' });
+    return it;
+  }
+
+  function setProgress(it, p) {
+    if (!(p > 0 && p <= 1)) return;
+    it.ring.classList.remove('spin');
+    it.bar.style.strokeDashoffset = 100.53 * (1 - p);
+    it.sub.textContent = `Converting… ${Math.round(p * 100)}%`;
+  }
+
+  function setDone(it, mp3) {
+    it.mp3 = mp3;
+    it.url = URL.createObjectURL(new Blob([mp3], { type: 'audio/mpeg' }));
+    it.li.classList.add('ready');
+    it.sub.hidden = true;
+    it.player.hidden = it.dl.hidden = false;
+
+    const probe = new Audio();
+    probe.preload = 'metadata';
+    probe.onloadedmetadata = () => { it.duration = probe.duration; it.time.textContent = fmtTime(probe.duration); };
+    probe.src = it.url;
+
+    refresh();
+    it.li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function setFailed(it) {
+    it.failed = true;
+    it.li.classList.add('failed');
+    it.ring.classList.remove('spin');
+    it.ring.classList.add('bad');
+    it.bar.style.strokeDashoffset = '';
+    it.sub.textContent = 'Couldn’t convert this file. It may be copy-protected or damaged.';
+    refresh();
+  }
+
+  function removeItem(it) {
+    if (playing === it) { player.pause(); player.removeAttribute('src'); playing = null; }
+    if (it.url) URL.revokeObjectURL(it.url);
+    it.removed = true;
+    items.delete(it.li);
+    it.li.remove();
+    refresh();
+  }
+
+  // --- Reordering (pointer-based so it works with mouse and touch) -------
+  // Move/up are tracked on the window: moving the row in the DOM would drop pointer capture on the handle.
+  function setupReorder(handle, li) {
+    handle.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      li.classList.add('dragging');
+      const move = ev => {
+        const after = [...list.children].find(x => x !== li &&
+          ev.clientY < x.getBoundingClientRect().top + x.offsetHeight / 2);
+        if (after) { if (li.nextElementSibling !== after) list.insertBefore(li, after); }
+        else if (list.lastElementChild !== li) list.append(li);
+        const r = results.getBoundingClientRect();
+        if (ev.clientY < r.top + 40) results.scrollTop -= 12;
+        else if (ev.clientY > r.bottom - 40) results.scrollTop += 12;
+        refresh();
+      };
+      const end = () => {
+        li.classList.remove('dragging');
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+    });
+    handle.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' && li.previousElementSibling) list.insertBefore(li, li.previousElementSibling);
+      else if (e.key === 'ArrowDown' && li.nextElementSibling) li.nextElementSibling.after(li);
+      else return;
+      e.preventDefault();
+      handle.focus();
+      refresh();
+    });
+  }
+
+  numberingBtn.onclick = () => {
+    numbering = !numbering;
+    numberingBtn.setAttribute('aria-pressed', numbering);
+    refresh();
+  };
+
+  // --- Mini player (one shared <audio>, so only one track plays at a time) -
+  const player = new Audio();
+  let playing = null;
+
+  function showPlaying(it, on) {
+    it.playBtn.innerHTML = on ? ICON.pause : ICON.play;
+    it.playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play');
+  }
+
+  function load(it) {
+    if (playing === it) return;
+    if (playing) showPlaying(playing, false);
+    playing = it;
+    player.src = it.url;
+  }
+
+  function togglePlay(it) {
+    if (playing === it && !player.paused) return player.pause();
+    load(it);
+    player.play();
+  }
+
+  function seekTo(it, frac) {
+    const wasCurrent = playing === it;
+    load(it);
+    const go = () => { player.currentTime = frac * player.duration; };
+    player.readyState >= 1 ? go() : player.addEventListener('loadedmetadata', go, { once: true });
+    if (!wasCurrent) player.play();
+  }
+
+  player.addEventListener('play', () => playing && showPlaying(playing, true));
+  player.addEventListener('pause', () => playing && showPlaying(playing, false));
+  player.addEventListener('timeupdate', () => {
+    if (!playing || !player.duration) return;
+    if (document.activeElement !== playing.seek) playing.seek.value = player.currentTime / player.duration * 1000;
+    playing.time.textContent = `${fmtTime(player.currentTime)} / ${fmtTime(player.duration)}`;
+  });
+  player.addEventListener('ended', () => { if (playing) playing.seek.value = 0; });
+
+  // --- Downloading (writes the chosen name into the MP3's title tag) ------
+  async function exportItem(it) {
+    const title = it.name.value.trim() || it.base;
+    const prefix = numbering ? it.num.textContent + ' - ' : '';
+    const args = ['-i', 'in.mp3', '-map', '0', '-c', 'copy', '-id3v2_version', '3', '-metadata', 'title=' + title];
+    if (numbering) args.push('-metadata', 'track=' + it.n);
+    args.push('out.mp3');
+    let out;
+    try {
+      out = await exec(args, 'in.mp3', 'out.mp3', it.mp3.slice());
+    } catch (e) {
+      // Still hand over the MP3, just without the new title tag.
+      console.error('Retagging failed', e);
+      out = it.mp3;
+    }
+    save(new Blob([out], { type: 'audio/mpeg' }), prefix + (safeFileName(title) || it.base) + '.mp3');
+  }
+
+  function showError(msg, e) {
+    console.error(e);
+    status.textContent = msg;
+    status.classList.add('bad');
+  }
+
+  async function downloadOne(it) {
+    it.dl.disabled = true;
+    it.dl.textContent = 'Saving…';
+    try { await exportItem(it); }
+    catch (e) { showError('Sorry, saving that file failed.', e); }
+    finally { it.dl.disabled = false; it.dl.textContent = 'Download'; }
+  }
+
+  let downloadAllBusy = false;
+  downloadAllBtn.onclick = async () => {
+    const done = rows().filter(it => it.mp3);
+    downloadAllBusy = true;
+    downloadAllBtn.disabled = true;
+    try {
+      for (const [i, it] of done.entries()) {
+        downloadAllBtn.textContent = `Saving ${i + 1} of ${done.length}…`;
+        await exportItem(it);
+        await new Promise(r => setTimeout(r, 400));   // browsers drop downloads fired too close together
+      }
+    } catch (e) {
+      showError('Sorry, saving the files failed.', e);
+    } finally {
+      downloadAllBusy = false;
+      downloadAllBtn.textContent = 'Download all';
+      refresh();
+    }
+  };
+
+  // --- Conversion queue (one file at a time) -----------------------------
+  let queue = Promise.resolve();
+
+  async function convert(file, it) {
+    if (it.removed) return;
+    it.sub.textContent = 'Converting…';
+    try {
+      const ext = (file.name.match(/\.\w+$/) || ['.wma'])[0];
+      const input = new Uint8Array(await file.arrayBuffer());
+      const out = await exec(
+        ['-i', 'input' + ext, '-vn', '-c:a', 'libmp3lame', '-b:a', BITRATE, 'output.mp3'],
+        'input' + ext, 'output.mp3', input, p => setProgress(it, p)
+      );
+      if (!it.removed) setDone(it, out);
+    } catch (e) {
+      console.error(file.name, e);
+      if (!it.removed) setFailed(it);
+    }
+  }
+
+  function handleFiles(files) {
+    for (const file of files) {
+      const it = addItem(file);
+      queue = queue.then(() => convert(file, it));
+    }
+    return queue;
+  }
+
+  // --- Adding files: button or drag & drop -------------------------------
+  $('choose').onclick = () => picker.click();
+  picker.addEventListener('change', () => { handleFiles(picker.files); picker.value = ''; });
+
+  // Accept file drops anywhere on the page so a near-miss doesn't open the file in the browser.
+  const isFileDrag = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  let depth = 0;
+  window.addEventListener('dragenter', e => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    depth++;
+    drop.classList.add('over');
+  });
+  window.addEventListener('dragleave', e => {
+    if (isFileDrag(e) && --depth <= 0) { depth = 0; drop.classList.remove('over'); }
+  });
+  window.addEventListener('dragover', e => { if (isFileDrag(e)) e.preventDefault(); });
+  window.addEventListener('drop', e => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    depth = 0;
+    drop.classList.remove('over');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  // --- Installed app ------------------------------------------------------
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  // Files opened from Explorer with "Open with → WMA to MP3".
+  if ('launchQueue' in window) {
+    launchQueue.setConsumer(async ({ files }) => {
+      if (files && files.length) handleFiles(await Promise.all(files.map(h => h.getFile())));
+    });
+  }
+
+  const installBtn = $('install');
+  let installPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installPrompt = e;
+    installBtn.hidden = false;
+  });
+  installBtn.onclick = async () => {
+    installBtn.hidden = true;
+    await installPrompt.prompt();
+    installPrompt = null;
+  };
+  window.addEventListener('appinstalled', () => { installBtn.hidden = true; });
+</script>
+</body>
+</html>
