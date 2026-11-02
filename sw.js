@@ -1,8 +1,8 @@
 // Caches the app and the ffmpeg converter so the installed app opens fast and works offline.
-const CACHE = 'wma-to-mp3-v1';
+const CACHE = 'wma-to-mp3-v2';
 const CORE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/';
 const PRECACHE = [
-  './', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
+  './', 'manifest.json', 'icon-192.png', 'icon-512.png',
   CORE + 'ffmpeg-core.js', CORE + 'ffmpeg-core.wasm',
 ];
 
